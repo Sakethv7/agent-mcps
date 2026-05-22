@@ -1,0 +1,50 @@
+name: Publish
+
+# Triggered by version tags: doc-tools-v0.2.0, notebook-runner-v1.0.0, etc.
+# Only the tagged package is published — others are unchanged.
+
+on:
+  push:
+    tags:
+      - "doc-tools-v*"
+      - "notebook-runner-v*"
+      - "git-context-v*"
+      - "data-tools-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # for PyPI trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Determine package from tag
+        id: pkg
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PKG="${TAG%-v*}"          # strip version suffix
+          echo "package=$PKG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#*-v}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches pyproject.toml
+        run: |
+          PKG=${{ steps.pkg.outputs.package }}
+          EXPECTED=${{ steps.pkg.outputs.version }}
+          ACTUAL=$(grep '^version' $PKG/pyproject.toml | head -1 | grep -oP '[\d.]+')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "Tag version ($EXPECTED) does not match pyproject.toml ($ACTUAL)"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build --package ${{ steps.pkg.outputs.package }}
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
